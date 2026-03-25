@@ -270,5 +270,4 @@ const errorStyle = { background: '#FEF2F2', border: '1px solid #FECACA', borderR
 const labelStyle = { display: 'block', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: 5 }
 const inputStyle = { width: '100%', padding: '12px 14px', border: '1.5px solid #E5E7EB', borderRadius: 8, fontSize: 15, fontFamily: "'DM Sans', sans-serif", color: '#111827', background: '#fff', outline: 'none', boxSizing: 'border-box' }
 const btnStyle = { width: '100%', padding: 13, borderRadius: 8, fontSize: 15, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none', background: '#16A34A', color: 'white', marginTop: 4 }
-const ghostBtn = { width: '100%', padding: 11, borderRadius: 8, fontSize: 14, fontWeight: 500, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: '1.5px solid #E5E7EB', background: 'transparent', color: '#6B7280', marginTop: 8 }
 const errorStyle = { background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#991B1B', marginBottom: 12 }
