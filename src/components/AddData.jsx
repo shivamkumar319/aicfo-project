@@ -30,21 +30,19 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2500) }
 
-  // ── GST FILE PARSER ──
-  function parseGSTFile(e) {
+  async function parseGSTFile(e) {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        // Try JSON first (GSTR-1 / GSTR-2A JSON export)
         const data = JSON.parse(ev.target.result)
         const parsed = extractFromGSTJSON(data)
         if (parsed.receivables.length > 0 || parsed.payables.length > 0) {
           setGstParsed(parsed)
-          showToast(`✅ ${parsed.receivables.length} invoices found!`)
+          showToast(`✅ ${parsed.receivables.length + parsed.payables.length} invoices found!`)
         } else {
-          showToast('No invoices found in this file. Try GSTR-1 JSON.')
+          showToast('No invoices found. Try GSTR-1 or GSTR-2A JSON.')
         }
       } catch {
         showToast('File format not supported. Please upload GST JSON file.')
@@ -328,7 +326,7 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
             <div style={{ marginTop: 16 }}>
               <div style={{ background: '#F0FDF4', border: '1px solid #A7F3D0', borderRadius: 10, padding: 14, marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#065F46', marginBottom: 8 }}>✅ Ready to import:</div>
-                <div style={{ display: 'flex', gap: 16 }}>
+                <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 22, fontWeight: 700, color: '#16A34A' }}>{gstParsed.receivables.length}</div>
                     <div style={{ fontSize: 11, color: '#6B7280' }}>{lang === 'hi' ? 'बिक्री (Receivables)' : 'Sales (Receivables)'}</div>
@@ -344,23 +342,30 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
                     <div style={{ fontSize: 11, color: '#6B7280' }}>Total value</div>
                   </div>
                 </div>
+                <div style={{ fontSize: 11, color: '#065F46', background: '#DCFCE7', borderRadius: 6, padding: '6px 10px' }}>
+                  ✏️ {lang === 'hi' ? 'नीचे GSTIN की जगह customer का नाम type करें' : lang === 'en' ? 'Replace GSTINs with customer names below — saved permanently' : 'Neeche GSTIN ki jagah customer ka naam type karo — ek baar karo, hamesha ke liye save'}
+                </div>
               </div>
 
-              {/* Preview list */}
-              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
-                {[...gstParsed.receivables.slice(0, 5), ...gstParsed.payables.slice(0, 3)].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #E5E7EB', fontSize: 12 }}>
-                    <span style={{ color: '#374151' }}>{item.name}</span>
-                    <span style={{ fontWeight: 600, color: item.rel === 'longterm' ? '#DC2626' : '#16A34A' }}>
-                      {item.rel === 'longterm' ? '-' : '+'}{fmt(item.amount)}
+              {/* Preview list — editable names */}
+              <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 12 }}>
+                {[...gstParsed.receivables, ...gstParsed.payables].map((item, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #E5E7EB' }}>
+                    <input
+                      style={{ flex: 1, fontSize: 12, padding: '5px 8px', border: '1px solid #E5E7EB', borderRadius: 6, fontFamily: "'DM Sans', sans-serif", color: '#111827' }}
+                      value={item.name}
+                      onChange={e => {
+                        const updated = { ...gstParsed }
+                        if (i < updated.receivables.length) updated.receivables[i].name = e.target.value
+                        else updated.payables[i - updated.receivables.length].name = e.target.value
+                        setGstParsed({ ...updated })
+                      }}
+                    />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: i < gstParsed.receivables.length ? '#16A34A' : '#DC2626', flexShrink: 0, fontFamily: "'DM Mono', monospace" }}>
+                      {i < gstParsed.receivables.length ? '+' : '-'}{fmt(item.amount)}
                     </span>
                   </div>
                 ))}
-                {(gstParsed.receivables.length + gstParsed.payables.length) > 8 && (
-                  <div style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center', padding: '6px 0' }}>
-                    +{gstParsed.receivables.length + gstParsed.payables.length - 8} more entries
-                  </div>
-                )}
               </div>
 
               <button
