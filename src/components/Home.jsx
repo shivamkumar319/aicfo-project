@@ -5,7 +5,8 @@ export default function Home({ rec, pay, profile, lang, days, setDays, onSignOut
   const biz = profile?.biz_name || 'My Business'
   const h = new Date().getHours()
   const gi = h < 12 ? 0 : h < 17 ? 1 : 2
-  const greet = tr(lang, 'greet').split(',')[gi] || tr(lang, 'greet')
+  const greetArr = T[lang]?.greet || T.hh.greet
+  const greet = greetArr[gi] || greetArr[0]
 
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const cut = new Date(today); cut.setDate(today.getDate() + days)
@@ -25,7 +26,7 @@ export default function Home({ rec, pay, profile, lang, days, setDays, onSignOut
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 2 }}>
-            {Array.isArray(tr(lang, 'greet')) ? tr(lang, 'greet')[gi] : tr(lang, 'greet').split(',')[gi] || 'Namaskar 🙏'}
+          {greet}
           </div>
           <div style={{ fontSize: 21, fontWeight: 600 }}>{biz}</div>
         </div>
