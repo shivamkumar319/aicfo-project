@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { tr, fmt, fdate, daysTo, calcHealthScore } from '../lib/utils'
+import CreditScore from './CreditScore'
 
 export default function Details({ rec, pay, profile, lang, days }) {
   const [tab, setTab] = useState('forecast')
@@ -11,6 +12,7 @@ export default function Details({ rec, pay, profile, lang, days }) {
     { id: 'forecast', label: '📊 ' + tr(lang, 'forecast') },
     { id: 'customers', label: '👥 ' + tr(lang, 'customers2') },
     { id: 'payables', label: '💸 ' + tr(lang, 'payables') },
+    { id: 'credit', label: '🏦 Credit' },
   ]
 
   function sendWA(custName, amount) {
@@ -63,6 +65,7 @@ export default function Details({ rec, pay, profile, lang, days }) {
           onOpenWA={(name, amt) => { setWaModal({ name, amt }); setWaTone('gentle') }} />
       )}
       {tab === 'payables' && <PayablesTab pay={pay} lang={lang} />}
+      {tab === 'credit' && <CreditScore rec={rec} pay={pay} profile={profile} lang={lang} />}
 
       {/* WhatsApp Modal */}
       {waModal && (
