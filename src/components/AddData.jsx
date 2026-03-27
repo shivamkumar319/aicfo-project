@@ -6,6 +6,8 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
   const [tab, setTab] = useState('rec')
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState('')
+  const [gstParsed, setGstParsed] = useState(null)
+  const [gstImporting, setGstImporting] = useState(false)
 
   // Rec form state
   const [rName, setRName] = useState('')
@@ -27,6 +29,96 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
   const [pRel, setPRel] = useState('longterm')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2500) }
+
+  // ── GST FILE PARSER ──
+  function parseGSTFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        // Try JSON first (GSTR-1 / GSTR-2A JSON export)
+        const data = JSON.parse(ev.target.result)
+        const parsed = extractFromGSTJSON(data)
+        if (parsed.receivables.length > 0 || parsed.payables.length > 0) {
+          setGstParsed(parsed)
+          showToast(`✅ ${parsed.receivables.length} invoices found!`)
+        } else {
+          showToast('No invoices found in this file. Try GSTR-1 JSON.')
+        }
+      } catch {
+        showToast('File format not supported. Please upload GST JSON file.')
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  function extractFromGSTJSON(data) {
+    const receivables = []
+    const payables = []
+    const today = new Date()
+
+    // GSTR-1 format — outward supplies (your sales = receivables)
+    const b2b = data?.b2b || data?.B2B || []
+    b2b.forEach(party => {
+      const name = party.ctin ? `GST: ${party.ctin}` : 'Unknown Party'
+      const invoices = party.inv || party.INV || []
+      invoices.forEach(inv => {
+        const amount = inv.val || inv.VAL || inv.txval || 0
+        const dateStr = inv.idt || inv.IDT || ''
+        let date = new Date(today); date.setDate(today.getDate() + 30)
+        if (dateStr) {
+          const parts = dateStr.split('-')
+          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+        }
+        if (amount > 0) {
+          receivables.push({
+            name, amount: Math.round(amount),
+            date: date.toISOString().split('T')[0],
+            rel: 'regular', pay_hist: 'ontime', freq: 'onetime',
+            inv: inv.inum || inv.INUM || ''
+          })
+        }
+      })
+    })
+
+    // GSTR-2A format — inward supplies (your purchases = payables)
+    const b2bPay = data?.b2b || data?.docdata?.b2b || []
+    if (payables.length === 0 && data?.itcElg) {
+      const items = data?.itcElg?.itm_det || []
+      items.forEach(item => {
+        const amount = item.txval || 0
+        if (amount > 0) {
+          payables.push({
+            name: item.ctin ? `GST: ${item.ctin}` : 'GST Vendor',
+            amount: Math.round(amount),
+            date: new Date(today.getTime() + 7 * 86400000).toISOString().split('T')[0],
+            cat: 'Raw material', rel: 'longterm'
+          })
+        }
+      })
+    }
+
+    return { receivables, payables }
+  }
+
+  async function importGSTData() {
+    if (!gstParsed) return
+    setGstImporting(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    let count = 0
+    for (const item of gstParsed.receivables) {
+      const { error } = await onAddRec({ ...item, user_id: user.id })
+      if (!error) count++
+    }
+    for (const item of gstParsed.payables) {
+      const { error } = await onAddPay({ ...item, user_id: user.id })
+      if (!error) count++
+    }
+    showToast(`✅ ${count} entries imported!`)
+    setGstParsed(null)
+    setGstImporting(false)
+  }
 
   async function addRec() {
     if (!rName.trim() || !rAmt || !rDate) { showToast(tr(lang, 'fillAll')); return }
@@ -84,11 +176,12 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
         {[
           { id: 'rec', label: '↓ ' + (lang === 'hi' ? 'पैसा आएगा' : lang === 'en' ? 'Money In' : 'Paisa Aayega') },
           { id: 'pay', label: '↑ ' + (lang === 'hi' ? 'पैसा जाएगा' : lang === 'en' ? 'Money Out' : 'Paisa Jaayega') },
+          { id: 'gst', label: '🧾 GST' },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            flex: 1, padding: 11, textAlign: 'center', fontSize: 13, fontWeight: 500,
+            flex: 1, padding: 11, textAlign: 'center', fontSize: 12, fontWeight: 500,
             cursor: 'pointer', border: 'none', fontFamily: "'DM Sans', sans-serif",
-            background: tab === t.id ? (t.id === 'rec' ? '#16A34A' : '#DC2626') : '#F9FAFB',
+            background: tab === t.id ? (t.id === 'rec' ? '#16A34A' : t.id === 'pay' ? '#DC2626' : '#7C3AED') : '#F9FAFB',
             color: tab === t.id ? 'white' : '#6B7280',
           }}>
             {t.label}
@@ -163,7 +256,99 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
         </div>
       )}
 
-      {/* Entries list */}
+      {/* GST Import tab */}
+      {tab === 'gst' && (
+        <div style={{ padding: '14px 16px' }}>
+          <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: '14px', marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#5B21B6', marginBottom: 6 }}>🧾 GST Auto-Import</div>
+            <div style={{ fontSize: 12, color: '#6D28D9', lineHeight: 1.6 }}>
+              {lang === 'hi'
+                ? 'GST portal से अपना GSTR-1 या GSTR-2A JSON file download करें और यहाँ upload करें। सभी invoices automatically add हो जाएंगे।'
+                : lang === 'en'
+                ? 'Download your GSTR-1 or GSTR-2A JSON file from the GST portal and upload it here. All invoices will be added automatically.'
+                : 'GST portal se apna GSTR-1 ya GSTR-2A JSON file download karo aur yahan upload karo. Sab invoices automatically add ho jaayenge.'}
+            </div>
+          </div>
+
+          {/* Step guide */}
+          <div style={{ marginBottom: 16 }}>
+            {[
+              { n: '1', text: lang === 'hi' ? 'gstin.gov.in पर login करें' : 'Login to gstin.gov.in' },
+              { n: '2', text: lang === 'hi' ? 'Returns → GSTR-1 → JSON download करें' : 'Returns → GSTR-1 → Download JSON' },
+              { n: '3', text: lang === 'hi' ? 'नीचे file upload करें' : 'Upload the file below' },
+            ].map(s => (
+              <div key={s.n} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#7C3AED', color: 'white', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.n}</div>
+                <div style={{ fontSize: 13, color: '#374151' }}>{s.text}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* File upload */}
+          <label style={{ display: 'block', width: '100%', padding: '20px', border: '2px dashed #DDD6FE', borderRadius: 10, textAlign: 'center', cursor: 'pointer', background: '#FAFAFA' }}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>📂</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#7C3AED', marginBottom: 3 }}>
+              {lang === 'hi' ? 'JSON file choose करें' : lang === 'en' ? 'Choose JSON file' : 'JSON file choose karo'}
+            </div>
+            <div style={{ fontSize: 11, color: '#9CA3AF' }}>GSTR-1 or GSTR-2A · .json format</div>
+            <input type="file" accept=".json" onChange={parseGSTFile} style={{ display: 'none' }} />
+          </label>
+
+          {/* Parsed preview */}
+          {gstParsed && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ background: '#F0FDF4', border: '1px solid #A7F3D0', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#065F46', marginBottom: 8 }}>✅ Ready to import:</div>
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#16A34A' }}>{gstParsed.receivables.length}</div>
+                    <div style={{ fontSize: 11, color: '#6B7280' }}>{lang === 'hi' ? 'बिक्री (Receivables)' : 'Sales (Receivables)'}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#DC2626' }}>{gstParsed.payables.length}</div>
+                    <div style={{ fontSize: 11, color: '#6B7280' }}>{lang === 'hi' ? 'खरीद (Payables)' : 'Purchases (Payables)'}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>
+                      ₹{Math.round([...gstParsed.receivables, ...gstParsed.payables].reduce((s, i) => s + i.amount, 0) / 1000)}K
+                    </div>
+                    <div style={{ fontSize: 11, color: '#6B7280' }}>Total value</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preview list */}
+              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
+                {[...gstParsed.receivables.slice(0, 5), ...gstParsed.payables.slice(0, 3)].map((item, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #E5E7EB', fontSize: 12 }}>
+                    <span style={{ color: '#374151' }}>{item.name}</span>
+                    <span style={{ fontWeight: 600, color: item.rel === 'longterm' ? '#DC2626' : '#16A34A' }}>
+                      {item.rel === 'longterm' ? '-' : '+'}{fmt(item.amount)}
+                    </span>
+                  </div>
+                ))}
+                {(gstParsed.receivables.length + gstParsed.payables.length) > 8 && (
+                  <div style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center', padding: '6px 0' }}>
+                    +{gstParsed.receivables.length + gstParsed.payables.length - 8} more entries
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={importGSTData}
+                disabled={gstImporting}
+                style={{ width: '100%', padding: 13, borderRadius: 8, background: '#7C3AED', color: 'white', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                {gstImporting ? 'Importing...' : `🧾 Import ${gstParsed.receivables.length + gstParsed.payables.length} entries`}
+              </button>
+              <button
+                onClick={() => setGstParsed(null)}
+                style={{ width: '100%', padding: 10, borderRadius: 8, background: 'transparent', color: '#6B7280', fontSize: 13, border: '1px solid #E5E7EB', cursor: 'pointer', marginTop: 8, fontFamily: "'DM Sans', sans-serif" }}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {(tab === 'rec' ? rec : pay).length > 0 && (
         <div style={{ padding: '0 16px 16px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.4px', padding: '14px 0 8px', borderTop: '1px solid #E5E7EB' }}>
