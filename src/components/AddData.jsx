@@ -58,44 +58,74 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
     const payables = []
     const today = new Date()
 
-    // GSTR-1 format — outward supplies (your sales = receivables)
-    const b2b = data?.b2b || data?.B2B || []
+    function parseDate(dateStr) {
+      if (!dateStr) return new Date(today.getTime() + 30 * 86400000)
+      // Format: DD-MM-YYYY
+      const parts = dateStr.split('-')
+      if (parts.length === 3) {
+        return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+      }
+      return new Date(today.getTime() + 30 * 86400000)
+    }
+
+    // ── GSTR-1: b2b array = outward sales = receivables ──
+    const b2b = data?.b2b || []
     b2b.forEach(party => {
-      const name = party.ctin ? `GST: ${party.ctin}` : 'Unknown Party'
-      const invoices = party.inv || party.INV || []
+      const gstin = party?.ctin || 'Unknown'
+      const invoices = party?.inv || []
       invoices.forEach(inv => {
-        const amount = inv.val || inv.VAL || inv.txval || 0
-        const dateStr = inv.idt || inv.IDT || ''
-        let date = new Date(today); date.setDate(today.getDate() + 30)
-        if (dateStr) {
-          const parts = dateStr.split('-')
-          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
-        }
+        const amount = Number(inv?.val || inv?.txval || 0)
+        const dateStr = inv?.idt || ''
+        const date = parseDate(dateStr)
         if (amount > 0) {
           receivables.push({
-            name, amount: Math.round(amount),
+            name: `GST: ${gstin}`,
+            amount: Math.round(amount),
             date: date.toISOString().split('T')[0],
-            rel: 'regular', pay_hist: 'ontime', freq: 'onetime',
-            inv: inv.inum || inv.INUM || ''
+            rel: 'regular',
+            pay_hist: 'ontime',
+            freq: 'onetime',
           })
         }
       })
     })
 
-    // GSTR-2A format — inward supplies (your purchases = payables)
-    const b2bPay = data?.b2b || data?.docdata?.b2b || []
-    if (payables.length === 0 && data?.itcElg) {
+    // ── GSTR-2A: b2b array = inward purchases = payables ──
+    // GSTR-2A has same b2b structure but represents purchases
+    // We detect GSTR-2A by presence of itcElg key
+    if (data?.itcElg) {
+      // Use itcElg for summary payables
       const items = data?.itcElg?.itm_det || []
       items.forEach(item => {
-        const amount = item.txval || 0
+        const amount = Number(item?.txval || 0)
+        const gstin = item?.ctin || 'Unknown Vendor'
         if (amount > 0) {
           payables.push({
-            name: item.ctin ? `GST: ${item.ctin}` : 'GST Vendor',
+            name: `GST: ${gstin}`,
             amount: Math.round(amount),
             date: new Date(today.getTime() + 7 * 86400000).toISOString().split('T')[0],
-            cat: 'Raw material', rel: 'longterm'
+            cat: 'Raw material',
+            rel: 'longterm',
           })
         }
+      })
+    } else if (data?.b2b && receivables.length === 0) {
+      // Fallback: if no receivables found and has b2b, treat as payables
+      b2b.forEach(party => {
+        const gstin = party?.ctin || 'Unknown'
+        const invoices = party?.inv || []
+        invoices.forEach(inv => {
+          const amount = Number(inv?.val || inv?.txval || 0)
+          if (amount > 0) {
+            payables.push({
+              name: `GST: ${gstin}`,
+              amount: Math.round(amount),
+              date: new Date(today.getTime() + 7 * 86400000).toISOString().split('T')[0],
+              cat: 'Raw material',
+              rel: 'longterm',
+            })
+          }
+        })
       })
     }
 
@@ -105,14 +135,13 @@ export default function AddData({ rec, pay, profile, lang, onAddRec, onAddPay, o
   async function importGSTData() {
     if (!gstParsed) return
     setGstImporting(true)
-    const { data: { user } } = await supabase.auth.getUser()
     let count = 0
     for (const item of gstParsed.receivables) {
-      const { error } = await onAddRec({ ...item, user_id: user.id })
+      const { error } = await onAddRec(item)
       if (!error) count++
     }
     for (const item of gstParsed.payables) {
-      const { error } = await onAddPay({ ...item, user_id: user.id })
+      const { error } = await onAddPay(item)
       if (!error) count++
     }
     showToast(`✅ ${count} entries imported!`)
