@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { tr, fmt, fdate, daysTo } from '../lib/utils'
+import { T, tr, fmt, fdate, daysTo } from '../lib/utils'
 
 export default function Home({ rec, pay, profile, lang, days, setDays, onSignOut }) {
   const biz = profile?.biz_name || 'My Business'
